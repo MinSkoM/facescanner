@@ -55,7 +55,10 @@ def load_model():
         raise e
 
 @app.post("/predict")
-async def predict(file: UploadFile = File(...)):
+async def predict(
+    file: UploadFile = File(...), 
+    image: Optional[UploadFile] = File(None) # รับไฟล์ภาพที่ส่งมาจาก Frontend
+):
     global interpreter, input_details, output_details
 
     if interpreter is None:
@@ -67,57 +70,66 @@ async def predict(file: UploadFile = File(...)):
     except:
         raise HTTPException(status_code=400, detail="Invalid JSON.")
 
-    # 1. Preprocess เบื้องต้น
-    # หมายเหตุ: ต้องแก้ใน preprocess_json_for_inference ให้รับแค่ 28 จุด 
-    # หรือ Slice ข้อมูลก่อนส่งเข้าฟังก์ชันนี้
+    # 1. Preprocess ข้อมูล JSON (Landmarks + Sensors)
     X_lm, X_sn, X_bg = preprocess_json_for_inference(json_data)
 
     if X_lm is None:
         raise HTTPException(status_code=422, detail="Data length error (need 80 frames).")
 
-    # 2. แก้ปัญหา Dimension Mismatch (1404 -> 84)
-    # ถ้า X_lm ออกมาเป็น (1, 80, 1404) เราจะ Slice ให้เหลือ (1, 80, 84)
+    # 2. จัดการ Dimension Landmarks (1404 -> 84)
     if X_lm.shape[-1] == 1404:
-        # แปลงเป็น (1, 80, 468, 3) -> เลือกเฉพาะจุด -> แปลงกลับเป็น (1, 80, 84)
         X_lm_reshaped = X_lm.reshape(1, 80, 468, 3)
         X_lm = X_lm_reshaped[:, :, SELECTED_LANDMARK_INDICES, :].reshape(1, 80, 84)
 
+    # 3. เตรียมข้อมูลรูปภาพ (Visual Input - Index 2)
+    if image:
+        try:
+            image_bytes = await image.read()
+            nparr = np.frombuffer(image_bytes, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            # Resize เป็น 224x224 ตามที่ Model ต้องการ
+            img_resized = cv2.resize(img, (224, 224))
+            # Normalize เป็นช่วง 0.0 - 1.0 และเพิ่มมิติเป็น [1, 224, 224, 3]
+            img_input = img_resized.astype(np.float32) / 255.0
+            img_input = np.expand_dims(img_input, axis=0)
+        except Exception as e:
+            print(f"Image processing error: {e}")
+            img_input = np.zeros((1, 224, 224, 3), dtype=np.float32)
+    else:
+        # กรณีไม่มีภาพส่งมา ให้ส่งค่า 0 (Black Image) ป้องกัน Model พัง
+        img_input = np.zeros((1, 224, 224, 3), dtype=np.float32)
+
     try:
-        # --- Mapping Inputs ตาม Index ที่ตรวจพบใน Log ---
+        # --- Mapping Inputs เข้าสู่ TFLite Interpreter ---
         
-        # Index 0: input_motion_1 (Sensors: [1, 80, 6])
+        # Index 0: Sensors (input_motion_1)
         interpreter.set_tensor(input_details[0]['index'], X_sn.astype(np.float32)) 
         
-        # Index 1: input_motion_0 (Landmarks: [1, 80, 84])
+        # Index 1: Landmarks (input_motion_0)
         interpreter.set_tensor(input_details[1]['index'], X_lm.astype(np.float32))
         
-        # Index 2: input_vision_rgb (Image/Background: [1, 224, 224, 3])
-        # หากไม่มีภาพส่งมา ให้ส่งค่า 0 (Black Image)
-        bg_input = np.zeros((1, 224, 224, 3), dtype=np.float32)
-        interpreter.set_tensor(input_details[2]['index'], bg_input)
+        # Index 2: Visual RGB (input_vision_rgb) - **ใช้ภาพจริงแล้ว**
+        interpreter.set_tensor(input_details[2]['index'], img_input)
         
-        # Index 3: input_motion_2 (Motion Analysis: [1, 80, 6])
-        # ใช้ข้อมูล X_bg (Motion Features) จาก preprocess
+        # Index 3: Motion Analysis (input_motion_2)
         interpreter.set_tensor(input_details[3]['index'], X_bg.astype(np.float32))
 
-        # --- ในไฟล์ main.py ส่วนของเมธอด predict ---
-
-        # 3. Run Inference
+        # 4. Run Inference
         interpreter.invoke()
 
-        # 4. ดึงค่าจาก Output ทั้ง 2 หัว
-        res_0 = interpreter.get_tensor(output_details[0]['index'])[0][0]
-        res_1 = interpreter.get_tensor(output_details[1]['index'])[0][0]
+        # 5. ดึงค่า Output ทั้ง 2 หัว
+        res_0 = interpreter.get_tensor(output_details[0]['index'])[0][0] # Motion Head
+        res_1 = interpreter.get_tensor(output_details[1]['index'])[0][0] # Vision Head
         
-        # คำนวณ Score (สามารถปรับเปลี่ยน Logic ได้ตามต้องการ)
+        # คำนวณคะแนนเฉลี่ย
         final_score = float((res_0 + res_1) / 2)
         
-        # ตัดสินผล (แนะนำให้ใช้ค่าที่เข้มงวดขึ้นถ้าต้องการกัน Spoof)
-        is_real = final_score > 0.7  # ปรับจาก 0.5 เป็น 0.7 เพื่อความชัวร์
+        # ตัดสินผล (Threshold 0.7)
+        is_real = final_score > 0.7 
         
         return {
             "score": round(final_score, 4),
-            "is_real": is_real,
+            "is_real": bool(is_real),
             "status": "success",
             "details": {
                 "motion_consistency": round(float(res_0), 4),

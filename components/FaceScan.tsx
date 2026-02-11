@@ -97,10 +97,23 @@ const FaceScan: React.FC<FaceScanProps> = ({ onScanComplete }) => {
 
     const sendDataToAPI = async () => {
         try {
+            // 1. ดึงภาพปัจจุบันจาก Canvas (ภาพที่แสดงบนจอ)
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            
+            // แปลงภาพเป็น Blob (JPEG)
+            const imageBlob = await new Promise<Blob | null>(resolve => 
+                canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.8)
+            );
+
             const payload = { data: recordedDataRef.current };
-            const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+            const jsonBlob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+            
             const formData = new FormData();
-            formData.append('file', blob, 'scan.json');
+            formData.append('file', jsonBlob, 'scan.json');
+            if (imageBlob) {
+                formData.append('image', imageBlob, 'frame.jpg'); // ส่งรูปไปด้วย!
+            }
 
             const response = await fetch(API_URL, {
                 method: 'POST',
@@ -108,15 +121,11 @@ const FaceScan: React.FC<FaceScanProps> = ({ onScanComplete }) => {
                 headers: { "ngrok-skip-browser-warning": "69420" }
             });
 
-            if (!response.ok) throw new Error(`Server error: ${response.status}`);
-
             const data = await response.json();
             setResult(data);
             setStatus('done');
-            setDebugMsg(data.is_real ? "✅ ยืนยันตัวตนสำเร็จ" : "⚠️ ตรวจพบความผิดปกติ");
-
         } catch (e: any) {
-            setDebugMsg(`❌ เชื่อมต่อล้มเหลว: ${e.message}`);
+            setDebugMsg(`❌ Error: ${e.message}`);
             setStatus('ready');
         }
     };
