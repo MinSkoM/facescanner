@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 
 const FRAMES_TO_COLLECT = 80;
-const API_URL = "http://localhost:8000/predict"; // เปลี่ยนตาม IP เครื่องถ้าทดสอบผ่านมือถือ
+const API_URL = "http://192.168.1.101/predict"; // เปลี่ยนตาม IP เครื่องถ้าทดสอบผ่านมือถือ
 
 declare const FaceMesh: any;
 
