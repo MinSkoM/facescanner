@@ -1,18 +1,16 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 
 // ==========================================
-// 1. COMPONENTS (ส่วนแสดงผลย่อย)
+// 1. COMPONENTS
 // ==========================================
 
-// --- ResultDisplay: ส่วนแสดงผลลัพธ์ (Design ใหม่) ---
+// --- ResultDisplay (คงเดิม) ---
 const ResultDisplay = ({ result }) => {
   const isReal = result?.is_real;
-  // แปลงค่า score เป็น % (รองรับกรณีไม่มีค่า)
   const scorePercent = result?.score ? (result.score * 100).toFixed(1) : "0.0";
   
   return (
     <div className="flex flex-col items-center justify-center p-4 animate-in fade-in zoom-in duration-500">
-      {/* Icon Ring */}
       <div className={`w-28 h-28 rounded-full flex items-center justify-center mb-6 shadow-[0_0_50px_rgba(0,0,0,0.5)] border-4 ${isReal ? 'bg-green-500/10 border-green-500/50 text-green-500' : 'bg-red-500/10 border-red-500/50 text-red-500'}`}>
         {isReal ? (
           <svg className="w-14 h-14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"/></svg>
@@ -21,7 +19,6 @@ const ResultDisplay = ({ result }) => {
         )}
       </div>
       
-      {/* Text Result */}
       <h2 className="text-4xl font-black text-white mb-2 tracking-tight drop-shadow-lg">
         {isReal ? "VERIFIED" : "REJECTED"}
       </h2>
@@ -29,7 +26,6 @@ const ResultDisplay = ({ result }) => {
         Confidence: {scorePercent}%
       </p>
 
-      {/* Details Grid (ถ้ามีข้อมูล) */}
       {result.details && (
         <div className="grid grid-cols-2 gap-4 w-full bg-white/5 rounded-2xl p-4 border border-white/5 backdrop-blur-sm">
           <div className="text-center p-2">
@@ -46,13 +42,12 @@ const ResultDisplay = ({ result }) => {
   );
 };
 
-// --- FaceScan: ส่วนกล้องและ HUD (Design ใหม่ + Logic กล้องพื้นฐาน) ---
+// --- FaceScan (แก้ไข: Capture ภาพจริง + เพิ่มจำนวน Frame) ---
 const FaceScan = ({ onScanComplete }) => {
   const videoRef = useRef(null);
-  const [status, setStatus] = useState('idle'); // idle, scanning, complete
+  const [status, setStatus] = useState('idle'); 
   const [progress, setProgress] = useState(0);
 
-  // เปิดกล้องเมื่อ Component ถูกโหลด
   useEffect(() => {
     startCamera();
     return () => stopCamera();
@@ -60,7 +55,10 @@ const FaceScan = ({ onScanComplete }) => {
 
   const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      // ขอความละเอียดต่ำหน่อยเพื่อให้ส่งข้อมูลไวขึ้น (เช่น 640x480)
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { width: 640, height: 480, facingMode: 'user' } 
+      });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play();
@@ -78,51 +76,66 @@ const FaceScan = ({ onScanComplete }) => {
     }
   };
 
+  // ฟังก์ชันจับภาพจากวิดีโอแปลงเป็น Base64
+  const captureFrame = () => {
+    if (!videoRef.current) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+    // return เป็น base64 string (jpeg quality 0.5 เพื่อลดขนาดไฟล์)
+    return canvas.toDataURL('image/jpeg', 0.5);
+  };
+
   const startScanning = () => {
     setStatus('scanning');
-    let count = 0;
-    const maxFrames = 40; // จำลองระยะเวลาสแกน (ประมาณ 2 วินาที)
     
+    // Config: ต้องมากกว่า 80 ตามที่ Error แจ้ง
+    const maxFrames = 85; 
+    const framesData = []; 
+    let count = 0;
+    
+    // ตั้งเวลา Interval ให้เร็วพอที่จะเก็บ 85 frames ในเวลาที่เหมาะสม (เช่น 30ms = ~33FPS)
     const interval = setInterval(() => {
+      // 1. Capture ภาพจริง
+      const frame = captureFrame();
+      if (frame) {
+        framesData.push(frame);
+      }
+
+      // 2. Update Progress
       count++;
       setProgress((count / maxFrames) * 100);
       
+      // 3. ครบจำนวนที่กำหนด
       if (count >= maxFrames) {
         clearInterval(interval);
         setStatus('complete');
         
-        // ส่งข้อมูลกลับไปที่ App (Logic เดิมของคุณต้องการ object scanData)
-        // ตรงนี้ส่ง dummy data หรือ data จริงจากการ capture frame ก็ได้
-        const scanData = { 
-          timestamp: Date.now(), 
-          message: "scan_captured",
-          // ถ้ามี logic capture frame จริง ให้ใส่ตรงนี้
-        };
-        onScanComplete(scanData);
+        // ส่ง Array ของภาพ (Base64 Strings) ไปยัง backend
+        // Backend จะเช็ค length ของ array นี้ ซึ่งตอนนี้จะมี 85 รูป (ผ่านเงื่อนไข >80)
+        onScanComplete(framesData);
       }
-    }, 50);
+    }, 30);
   };
 
   return (
     <div className="relative w-full aspect-[3/4] bg-neutral-900 overflow-hidden rounded-[2.3rem] shadow-inner ring-1 ring-white/10">
       <video ref={videoRef} className="w-full h-full object-cover transform scale-x-[-1]" playsInline muted />
       
-      {/* HUD Overlay */}
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute inset-0 bg-radial-gradient from-transparent via-black/10 to-black/80" />
         
-        {/* Face Oval */}
         <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[55%] w-[65%] h-[55%] rounded-[50%] transition-all duration-700 ease-out ${
            status === 'scanning' ? 'border-[3px] border-indigo-500 shadow-[0_0_60px_rgba(99,102,241,0.6)] scale-105' : 'border-2 border-white/20'
         }`}>
-           {/* Corner Markers */}
            <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-3 bg-indigo-400/80"></div>
            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-1 h-3 bg-indigo-400/80"></div>
            <div className="absolute top-1/2 left-0 -translate-x-1/2 -translate-y-1/2 w-3 h-1 bg-indigo-400/80"></div>
            <div className="absolute top-1/2 right-0 translate-x-1/2 -translate-y-1/2 w-3 h-1 bg-indigo-400/80"></div>
         </div>
 
-        {/* Laser Scan Line */}
         {status === 'scanning' && (
            <div className="absolute inset-0 z-20 overflow-hidden">
              <div className="w-full h-[2px] bg-indigo-400 shadow-[0_0_25px_rgba(99,102,241,1)] absolute animate-scan-line" />
@@ -130,7 +143,6 @@ const FaceScan = ({ onScanComplete }) => {
         )}
       </div>
 
-      {/* Button & Progress Bar */}
       <div className="absolute bottom-8 left-0 w-full px-6 flex justify-center z-30">
         {status === 'ready' && (
           <button 
@@ -151,7 +163,6 @@ const FaceScan = ({ onScanComplete }) => {
         )}
       </div>
       
-      {/* Animation Styles */}
       <style>{`
         @keyframes scan-line {
           0% { top: 10%; opacity: 0; }
@@ -168,20 +179,17 @@ const FaceScan = ({ onScanComplete }) => {
 };
 
 // ==========================================
-// 2. MAIN APP (Logic เดิม + Design ใหม่)
+// 2. MAIN APP
 // ==========================================
 
 const App = () => {
-  // State เดิมของคุณ
   const [result, setResult] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [scanKey, setScanKey] = useState(0); 
 
-  // Env Variable เดิม
   const NGROK_URL = import.meta.env?.VITE_NGROK_URL;
 
-  // Logic: handleSubmit (คงเดิม 100% ตามที่คุณให้มา)
   const handleSubmit = useCallback(async (scanData) => {
     if (!NGROK_URL) {
       setError('Backend URL is not configured. Please contact the site administrator.');
@@ -192,6 +200,7 @@ const App = () => {
     setError(null);
     setResult(null);
 
+    // scanData ตอนนี้คือ Array ของ Base64 strings จำนวน 85 items แล้ว
     const blob = new Blob([JSON.stringify(scanData)], { type: 'application/json' });
     const formData = new FormData();
     formData.append('file', blob, 'liveness.json');
@@ -205,7 +214,7 @@ const App = () => {
       const response = await fetch(`${formattedUrl}/predict`, {
         method: 'POST',
         headers: {
-          'ngrok-skip-browser-warning': '69420', // Header สำคัญที่คุณใส่ไว้
+          'ngrok-skip-browser-warning': '69420',
         },
         body: formData,
       });
@@ -225,7 +234,6 @@ const App = () => {
     }
   }, [NGROK_URL]);
   
-  // Logic: handleScanAgain (คงเดิม)
   const handleScanAgain = () => {
     setResult(null);
     setError(null);
@@ -233,17 +241,14 @@ const App = () => {
     setScanKey(prevKey => prevKey + 1);
   };
 
-  // --- RENDER (เปลี่ยนแค่หน้ากากเป็น Dark Mode) ---
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-[#05050a] text-slate-200 relative overflow-hidden font-sans selection:bg-indigo-500/30">
       
-      {/* Background Effects */}
       <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-indigo-600/20 rounded-full blur-[128px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-purple-600/10 rounded-full blur-[128px] pointer-events-none" />
 
       <div className="w-full max-w-md z-10 px-6">
         
-        {/* Header Section */}
         <header className="text-center mb-8 animate-in fade-in slide-in-from-top-4 duration-700">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-white/5 rounded-2xl shadow-[0_0_40px_-10px_rgba(79,70,229,0.3)] mb-6 border border-white/10 backdrop-blur-md">
             <svg className="w-8 h-8 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -251,23 +256,20 @@ const App = () => {
             </svg>
           </div>
           <h1 className="text-4xl font-black tracking-tight text-white mb-2 drop-shadow-lg">
-            GSYNC <span className="text-indigo-500">Liveness Detection</span>
+            GSYNC <span className="text-indigo-500">Liveness</span>
           </h1>
           <p className="text-slate-400 text-sm font-medium tracking-widest uppercase">
             {result ? "Verification Complete" : "Secure Identity Check"}
           </p>
         </header>
 
-        {/* Main Card Container */}
         <main className="relative bg-black/40 backdrop-blur-2xl rounded-[2.5rem] shadow-2xl border border-white/10 overflow-hidden ring-1 ring-white/5">
           <div className="p-1">
             
-            {/* 1. Normal State: Scanning */}
             {!result && !isLoading && !error && (
               <FaceScan key={scanKey} onScanComplete={handleSubmit} />
             )}
 
-            {/* 2. Loading State (Design ใหม่) */}
             {isLoading && (
               <div className="flex flex-col items-center justify-center py-24 space-y-8 min-h-[400px]">
                 <div className="relative">
@@ -283,7 +285,6 @@ const App = () => {
               </div>
             )}
             
-            {/* 3. Error/Config State (Design ใหม่) */}
             {(!NGROK_URL || error) && !isLoading && (
               <div className="p-10 flex flex-col items-center text-center min-h-[400px] justify-center">
                 <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-6 ${error ? 'bg-red-500/10 text-red-500' : 'bg-amber-500/10 text-amber-500'}`}>
@@ -303,7 +304,6 @@ const App = () => {
               </div>
             )}
 
-            {/* 4. Result State (Design ใหม่) */}
             {result && (
               <div className="p-6 min-h-[450px] flex flex-col justify-between">
                 <ResultDisplay result={result} />
@@ -318,7 +318,6 @@ const App = () => {
           </div>
         </main>
 
-        {/* Footer Info */}
         <footer className="mt-8 text-center text-slate-500 text-[10px] font-bold uppercase tracking-[0.3em]">
           Secure Identity Verification v2.0
         </footer>
