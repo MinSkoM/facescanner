@@ -55,89 +55,94 @@ def load_model():
         raise e
 
 @app.post("/predict")
-async def predict(
-    file: UploadFile = File(...), 
-    image: Optional[UploadFile] = File(None) # รับไฟล์ภาพที่ส่งมาจาก Frontend
-):
-    global interpreter, input_details, output_details
-
-    if interpreter is None:
-        raise HTTPException(status_code=500, detail="Model not initialized.")
-
+async def predict(file: UploadFile = File(...), image: Optional[UploadFile] = File(None)):
     try:
-        contents = await file.read()
-        json_data = json.loads(contents)
-    except:
-        raise HTTPException(status_code=400, detail="Invalid JSON.")
-
-    # 1. Preprocess ข้อมูล JSON (Landmarks + Sensors)
-    X_lm, X_sn, X_bg = preprocess_json_for_inference(json_data)
-
-    if X_lm is None:
-        raise HTTPException(status_code=422, detail="Data length error (need 80 frames).")
-
-    # 2. จัดการ Dimension Landmarks (1404 -> 84)
-    if X_lm.shape[-1] == 1404:
-        X_lm_reshaped = X_lm.reshape(1, 80, 468, 3)
-        X_lm = X_lm_reshaped[:, :, SELECTED_LANDMARK_INDICES, :].reshape(1, 80, 84)
-
-    # 3. เตรียมข้อมูลรูปภาพ (Visual Input - Index 2)
-    if image:
-        try:
-            image_bytes = await image.read()
-            nparr = np.frombuffer(image_bytes, np.uint8)
-            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            # Resize เป็น 224x224 ตามที่ Model ต้องการ
-            img_resized = cv2.resize(img, (224, 224))
-            # Normalize เป็นช่วง 0.0 - 1.0 และเพิ่มมิติเป็น [1, 224, 224, 3]
-            img_input = img_resized.astype(np.float32) / 255.0
-            img_input = np.expand_dims(img_input, axis=0)
-        except Exception as e:
-            print(f"Image processing error: {e}")
-            img_input = np.zeros((1, 224, 224, 3), dtype=np.float32)
-    else:
-        # กรณีไม่มีภาพส่งมา ให้ส่งค่า 0 (Black Image) ป้องกัน Model พัง
-        img_input = np.zeros((1, 224, 224, 3), dtype=np.float32)
-
-    try:
-        # --- Mapping Inputs เข้าสู่ TFLite Interpreter ---
+        # 1. อ่านข้อมูล JSON (Motion & Landmarks)
+        json_content = await file.read()
+        data = json.loads(json_content)
+        scan_data = data.get('data', [])
         
-        # Index 0: Sensors (input_motion_1)
+        # Preprocess ข้อมูล Vector (ส่วนนี้ของคุณน่าจะถูกแล้ว)
+        from utils import preprocess_json_for_inference
+        X_lm, X_sn, X_bg = preprocess_json_for_inference(scan_data)
+
+        # ---------------------------------------------------------
+        # 2. จัดการรูปภาพ (Visual Input) ** แก้จุดนี้ **
+        # ---------------------------------------------------------
+        if image:
+            # อ่านไฟล์รูปภาพแปลงเป็น numpy array
+            img_bytes = await image.read()
+            nparr = np.frombuffer(img_bytes, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            
+            # เช็คขนาดที่โมเดลต้องการ (Input Index 2 คือ Visual)
+            # input_details[2]['shape'] มักจะเป็น [1, 128, 128, 3] หรือ [1, 224, 224, 3]
+            target_h = input_details[2]['shape'][1]
+            target_w = input_details[2]['shape'][2]
+            
+            # A. Resize ให้ตรงกับโมเดล
+            img = cv2.resize(img, (target_w, target_h))
+            
+            # B. แปลงสี BGR -> RGB (สำคัญ! ถ้าสีผิด ผลลัพธ์จะเพี้ยน)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            
+            # C. Normalize (สำคัญมาก! แก้ปัญหาคะแนนเต็ม)
+            # แปลงเป็น float32 และหาร 255.0 เพื่อให้ค่าอยู่ระหว่าง 0.0 - 1.0
+            img_input = img.astype(np.float32) / 255.0
+            
+            # D. เพิ่มมิติ Batch (จาก [128,128,3] เป็น [1,128,128,3])
+            img_input = np.expand_dims(img_input, axis=0)
+            
+        else:
+            # กรณีไม่มีรูป (ไม่ควรเกิดขึ้นถ้า Frontend ส่งมา)
+            # สร้างภาพดำเปล่าๆ เพื่อกัน Crash
+            target_h = input_details[2]['shape'][1]
+            target_w = input_details[2]['shape'][2]
+            img_input = np.zeros((1, target_h, target_w, 3), dtype=np.float32)
+
+        # ---------------------------------------------------------
+        # 3. ส่งเข้าโมเดล (Inference)
+        # ---------------------------------------------------------
+        
+        # Input 0: Sensors
         interpreter.set_tensor(input_details[0]['index'], X_sn.astype(np.float32)) 
         
-        # Index 1: Landmarks (input_motion_0)
+        # Input 1: Landmarks
         interpreter.set_tensor(input_details[1]['index'], X_lm.astype(np.float32))
         
-        # Index 2: Visual RGB (input_vision_rgb) - **ใช้ภาพจริงแล้ว**
+        # Input 2: Visual (รูปภาพที่ process แล้ว)
         interpreter.set_tensor(input_details[2]['index'], img_input)
         
-        # Index 3: Motion Analysis (input_motion_2)
+        # Input 3: Motion Analysis
         interpreter.set_tensor(input_details[3]['index'], X_bg.astype(np.float32))
 
-        # 4. Run Inference
+        # Run
         interpreter.invoke()
 
-        # 5. ดึงค่า Output ทั้ง 2 หัว
-        res_0 = interpreter.get_tensor(output_details[0]['index'])[0][0] # Motion Head
-        res_1 = interpreter.get_tensor(output_details[1]['index'])[0][0] # Vision Head
+        # Get Output
+        res_motion = interpreter.get_tensor(output_details[0]['index'])[0][0] # Motion Score
+        res_visual = interpreter.get_tensor(output_details[1]['index'])[0][0] # Visual Score
         
-        # คำนวณคะแนนเฉลี่ย
-        final_score = float((res_0 + res_1) / 2)
+        print(f"DEBUG Scores -> Motion: {res_motion:.4f}, Visual: {res_visual:.4f}")
+
+        # Weighting: คุณอาจจะให้ความสำคัญกับ Visual น้อยลงถ้ามันยังไม่แม่น
+        # เช่น Motion 70% + Visual 30%
+        final_score = (res_motion * 0.6) + (res_visual * 0.4)
         
         # ตัดสินผล (Threshold 0.7)
         is_real = final_score > 0.7 
         
         return {
-            "score": round(final_score, 4),
+            "score": float(final_score),
             "is_real": bool(is_real),
             "status": "success",
             "details": {
-                "motion_consistency": round(float(res_0), 4),
-                "visual_liveness": round(float(res_1), 4),
-                "frames_processed": 80
+                "motion_consistency": float(res_motion),
+                "visual_liveness": float(res_visual)
             }
         }
 
     except Exception as e:
-        print(f"Inference Error: {e}")
-        return {"status": "error", "message": str(e)}
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e), "is_real": False, "score": 0.0}
