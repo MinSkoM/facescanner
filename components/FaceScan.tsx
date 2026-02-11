@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 
-const FRAMES_TO_COLLECT = 80;
+const FRAMES_TO_COLLECT = 100;
 const API_URL = "https://malika-shedable-recollectively.ngrok-free.dev/predict"; 
 
 declare const FaceMesh: any;
