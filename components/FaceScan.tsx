@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 
-// --- CONFIGURATION ---
 const FRAMES_TO_COLLECT = 80;
 
 declare const FaceMesh: any;
@@ -18,7 +17,13 @@ const FaceScan: React.FC<FaceScanProps> = ({ onScanComplete }) => {
 
     const [status, setStatus] = useState<string>('initializing');
     const [frameCount, setFrameCount] = useState(0);
-    const [debugMsg, setDebugMsg] = useState<string>("Waiting...");
+    // เพิ่มตัวแปร Debug บนหน้าจอ
+    const [logs, setLogs] = useState<string[]>([]);
+
+    const addLog = (msg: string) => {
+        console.log(msg); // ลง Console ด้วย
+        setLogs(prev => [msg, ...prev].slice(0, 5)); // โชว์แค่ 5 บรรทัดล่าสุดบนจอ
+    };
 
     const cleanup = useCallback(() => {
         if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
@@ -28,17 +33,17 @@ const FaceScan: React.FC<FaceScanProps> = ({ onScanComplete }) => {
         }
     }, []);
 
-    // 1. Initialize FaceMesh
+    // 1. Setup FaceMesh
     useEffect(() => {
-        const initFaceMesh = async () => {
+        const initAI = async () => {
             if (typeof FaceMesh === 'undefined') {
-                setDebugMsg("❌ Error: FaceMesh script not found! Check index.html");
+                addLog("❌ Error: FaceMesh script is missing!");
                 setStatus('error');
                 return;
             }
 
             try {
-                setDebugMsg("Loading Model...");
+                addLog("1. Initializing FaceMesh...");
                 faceMeshRef.current = new FaceMesh({
                     locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
                 });
@@ -51,74 +56,69 @@ const FaceScan: React.FC<FaceScanProps> = ({ onScanComplete }) => {
                 });
 
                 faceMeshRef.current.onResults(onResults);
-                setDebugMsg("Model Loaded. Waiting for camera...");
+                addLog("✅ 2. FaceMesh Ready.");
                 setStatus('ready');
             } catch (e: any) {
-                setDebugMsg(`❌ Model Error: ${e.message}`);
-                setStatus('error');
+                addLog(`❌ Error Init: ${e.message}`);
             }
         };
-        initFaceMesh();
+        initAI();
         return cleanup;
     }, [cleanup]);
 
-    // 2. Handle Results (ถ้าฟังก์ชันนี้ทำงาน เลขต้องขยับ)
+    // 2. Callback เมื่อ AI เจอหน้า (จุดสำคัญที่ต้องเช็ค)
     const onResults = useCallback((results: any) => {
-        // วาดภาพลง Canvas
-        if (canvasRef.current) {
-            const ctx = canvasRef.current.getContext('2d');
-            if (ctx) {
-                ctx.save();
-                ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-                ctx.translate(canvasRef.current.width, 0);
-                ctx.scale(-1, 1);
-                ctx.drawImage(results.image, 0, 0, canvasRef.current.width, canvasRef.current.height);
-                ctx.restore();
-            }
+        // วาด Canvas
+        if (canvasRef.current && canvasRef.current.getContext('2d')) {
+            const ctx = canvasRef.current.getContext('2d')!;
+            ctx.save();
+            ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+            ctx.drawImage(results.image, 0, 0, canvasRef.current.width, canvasRef.current.height);
+            ctx.restore();
         }
 
-        // เช็คว่าเจอหน้าไหม
+        // เช็คผลลัพธ์
         if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+            // เจอหน้า!
             if (status === 'scanning') {
                 const landmarks = results.multiFaceLandmarks[0];
-                
-                // เก็บข้อมูล
                 recordedDataRef.current.push({
                     faceMesh: landmarks.map((lm: any) => [lm.x, lm.y, lm.z]).flat(),
-                    meta: { timestamp: Date.now() }
+                    meta: { t: Date.now() }
                 });
-
-                const count = recordedDataRef.current.length;
-                setFrameCount(count); // อัปเดตตัวเลขหน้าจอ
                 
+                const count = recordedDataRef.current.length;
+                setFrameCount(count);
+
+                if (count % 10 === 0) addLog(`✅ Saving... (${count}/${FRAMES_TO_COLLECT})`);
+
                 if (count >= FRAMES_TO_COLLECT) {
+                    addLog("🎉 Complete! Sending data...");
                     setStatus('processing');
                     onScanComplete({ data: recordedDataRef.current });
                 }
             }
         } else {
-             // ถ้า AI ทำงานแต่หาหน้าไม่เจอ จะเข้าตรงนี้
-             if(status === 'scanning') setDebugMsg("AI Running... Face NOT detected");
+            // AI ทำงาน แต่หาหน้าไม่เจอ
+            if (Math.random() > 0.95) addLog("⚠️ AI Running but NO FACE detected."); 
         }
     }, [status, onScanComplete]);
 
-    // 3. Start Camera & Loop
+    // 3. เริ่มกล้องและลูป
     const startScan = async () => {
         try {
-            setDebugMsg("Opening Camera...");
+            addLog("3. Requesting Camera...");
             const stream = await navigator.mediaDevices.getUserMedia({ 
                 video: { width: 320, height: 240, facingMode: 'user' } 
             });
-            
+
             if (videoRef.current) {
                 videoRef.current.srcObject = stream;
-                
-                // บังคับเล่นวิดีโอ
+                // ต้องรอให้ Video เล่นจริงก่อนส่งให้ AI
                 videoRef.current.onloadedmetadata = async () => {
+                    addLog("4. Video Metadata loaded. Playing...");
                     await videoRef.current!.play();
-                    setDebugMsg("Camera Playing. Starting Loop...");
                     
-                    // ตั้งค่า Canvas ให้เท่ากับ Video
                     if (canvasRef.current) {
                         canvasRef.current.width = videoRef.current!.videoWidth;
                         canvasRef.current.height = videoRef.current!.videoHeight;
@@ -128,75 +128,75 @@ const FaceScan: React.FC<FaceScanProps> = ({ onScanComplete }) => {
                     recordedDataRef.current = [];
                     setFrameCount(0);
                     
-                    startLoop(); // เริ่มส่งภาพเข้า AI
+                    addLog("🚀 5. Starting AI Loop...");
+                    sendToAI(); 
                 };
             }
-        } catch (err: any) {
-            setDebugMsg(`❌ Camera Error: ${err.message}`);
+        } catch (e: any) {
+            addLog(`❌ Camera Error: ${e.message}`);
             setStatus('permission_required');
         }
     };
 
-    const startLoop = () => {
-        const loop = async () => {
-            if (
-                videoRef.current && 
-                faceMeshRef.current && 
-                videoRef.current.readyState >= 2 && 
-                !videoRef.current.paused
-            ) {
-                try {
-                    await faceMeshRef.current.send({ image: videoRef.current });
-                } catch (e) {
-                    console.error(e);
-                }
+    const sendToAI = async () => {
+        if (
+            videoRef.current && 
+            faceMeshRef.current && 
+            !videoRef.current.paused && 
+            !videoRef.current.ended
+        ) {
+            try {
+                await faceMeshRef.current.send({ image: videoRef.current });
+            } catch (e) {
+                console.error(e);
             }
-            animationFrameId.current = requestAnimationFrame(loop);
-        };
-        loop();
+        }
+        // เรียกตัวเองซ้ำ (Loop)
+        animationFrameId.current = requestAnimationFrame(sendToAI);
     };
 
     return (
-        <div className="flex flex-col items-center p-4">
-            <h2 className="text-xl font-bold mb-2">Debug Mode</h2>
-            
-            {/* แสดง Video ตัวจริง (ปกติจะซ่อน) เพื่อเช็คว่ากล้องติดไหม */}
-            <div className="relative border-4 border-blue-500 w-[320px] h-[240px]">
+        <div className="flex flex-col items-center w-full max-w-md mx-auto p-4">
+            {/* พื้นที่แสดงผล Debug Log */}
+            <div className="w-full bg-gray-900 text-green-400 font-mono text-xs p-2 mb-2 rounded h-24 overflow-y-auto">
+                {logs.map((log, i) => <div key={i}>{log}</div>)}
+            </div>
+
+            <div className="relative border-4 border-gray-300 rounded-lg overflow-hidden w-[320px] h-[240px] bg-black">
+                {/* Video จริง (ซ่อนไว้ข้างหลังแต่ต้องเล่น) */}
                 <video 
                     ref={videoRef} 
-                    className="absolute inset-0 w-full h-full object-cover opacity-50" // ทำให้จางๆ จะได้เห็น Canvas ซ้อน
+                    className="absolute inset-0 object-cover opacity-0" 
                     playsInline 
                     muted 
                 />
+                
+                {/* Canvas ที่วาดผลลัพธ์ */}
                 <canvas 
                     ref={canvasRef} 
-                    className="absolute inset-0 w-full h-full object-cover" 
+                    className="absolute inset-0 w-full h-full object-cover transform -scale-x-100" 
                 />
-            </div>
 
-            <div className="mt-4 p-4 bg-gray-100 rounded w-full max-w-md text-center">
-                <p className="font-bold text-lg">Status: {status}</p>
-                <p className="text-red-600 font-mono text-sm my-2">{debugMsg}</p>
-                <p className="text-3xl font-bold text-blue-600 my-2">{frameCount} / {FRAMES_TO_COLLECT}</p>
-                
-                {status === 'ready' || status === 'error' ? (
-                    <button 
-                        onClick={startScan} 
-                        className="bg-blue-600 text-white px-6 py-2 rounded shadow hover:bg-blue-700"
-                    >
-                        Start Scan
-                    </button>
-                ) : null}
+                {/* Overlay สถานะ */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    {status !== 'scanning' && status !== 'processing' && (
+                        <button 
+                            onClick={startScan} 
+                            className="pointer-events-auto bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-full shadow-lg"
+                        >
+                            START SCAN
+                        </button>
+                    )}
+                    
+                    <div className="absolute bottom-2 right-2 bg-black/50 text-white px-2 rounded">
+                        Frames: {frameCount}
+                    </div>
+                </div>
             </div>
             
-            <div className="mt-4 text-xs text-left text-gray-500 w-full max-w-md">
-                <p><strong>วิธีแก้ปัญหา:</strong></p>
-                <ul className="list-disc ml-4">
-                    <li>ถ้า Video ไม่ขึ้นภาพเลย = กล้องเสีย/ไม่ได้รับอนุญาต</li>
-                    <li>ถ้าขึ้น Error "FaceMesh script not found" = ต้องแก้ index.html</li>
-                    <li>ถ้า Video ขยับแต่เลข Frame ไม่เดิน = แสงน้อย หรือ AI หาหน้าไม่เจอ</li>
-                </ul>
-            </div>
+            <p className="mt-2 text-sm text-gray-500">
+                Status: <span className="font-bold text-blue-600">{status}</span>
+            </p>
         </div>
     );
 };
