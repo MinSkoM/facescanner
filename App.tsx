@@ -63,56 +63,64 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 font-sans">
-      <div className="w-full max-w-lg mx-auto">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8fafc] p-6 font-sans text-slate-900">
+      <div className="w-full max-w-md">
+        {/* Header */}
         <header className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-800">Face Liveness Detection</h1>
-           <p className="text-gray-600 mt-2">
-            {result ? "Prediction Result" : "Perform a quick scan to verify liveness."}
-          </p>
+          <div className="inline-flex items-center justify-center w-14 h-14 bg-white rounded-2xl shadow-sm mb-4 border border-slate-200">
+            <svg className="w-7 h-7 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-black tracking-tight text-slate-800 uppercase">GSYNC <span className="text-indigo-600">Vision</span></h1>
+          <p className="text-slate-500 text-sm font-medium mt-1 uppercase tracking-widest">Identity Verification</p>
         </header>
 
-        <main className="bg-white p-8 rounded-2xl shadow-lg space-y-6">
-          {!result && !isLoading && !error && (
-             <FaceScan key={scanKey} onScanComplete={handleSubmit} />
-          )}
+        {/* Main Container */}
+        <main className="bg-white rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.04)] border border-slate-100 overflow-hidden">
+          <div className="p-4"> {/* ลด padding เพื่อให้พื้นที่กล้องใหญ่ขึ้น */}
+            
+            {!result && !isLoading && !error && (
+              <div className="animate-in fade-in duration-500">
+                {/* ส่ง Props ที่จำเป็นไปให้ FaceScan */}
+                <FaceScan key={scanKey} onScanComplete={handleSubmit} />
+              </div>
+            )}
 
-          {isLoading && (
-             <div className="flex flex-col items-center justify-center p-10 space-y-4">
-               <svg className="animate-spin h-10 w-10 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <p className="text-gray-700 font-semibold">Analyzing liveness...</p>
-             </div>
-          )}
-          
-          {!NGROK_URL && (
-            <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4" role="alert">
-              <p className="font-bold">Configuration Notice</p>
-              <p>The backend API URL is not configured. The application will not function correctly.</p>
-            </div>
-          )}
+            {isLoading && (
+              <div className="flex flex-col items-center justify-center py-20">
+                <div className="relative w-16 h-16 mb-6">
+                  <div className="absolute inset-0 border-4 border-slate-100 rounded-full"></div>
+                  <div className="absolute inset-0 border-4 border-indigo-600 rounded-full border-t-transparent animate-spin"></div>
+                </div>
+                <p className="text-slate-800 font-bold uppercase tracking-widest text-xs">Analyzing Biometrics</p>
+              </div>
+            )}
 
-          {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative text-center" role="alert">
-              <strong className="font-bold">Error: </strong>
-              <span className="block sm:inline">{error}</span>
-               <button onClick={handleScanAgain} className="mt-4 w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">
-                  Try Again
-               </button>
-            </div>
-          )}
+            {error && (
+              <div className="p-8 text-center bg-red-50 rounded-[2rem]">
+                <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                </div>
+                <p className="text-red-800 font-bold mb-6">{error}</p>
+                <button onClick={handleScanAgain} className="w-full py-4 bg-white border border-red-200 text-red-600 font-bold rounded-2xl hover:bg-red-100 transition-all">Try Again</button>
+              </div>
+            )}
 
-          {result && (
-            <div className="text-center">
-              <ResultDisplay result={result} />
-              <button onClick={handleScanAgain} className="mt-6 w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700">
-                Scan Again
-              </button>
-            </div>
-          )}
+            {result && (
+              <div className="p-2 animate-in zoom-in duration-300">
+                <ResultDisplay result={result} />
+                <button onClick={handleScanAgain} className="mt-4 w-full bg-slate-900 text-white font-bold py-4 rounded-2xl hover:bg-black transition-all active:scale-[0.98]">
+                  Re-Scan Identity
+                </button>
+              </div>
+            )}
+          </div>
         </main>
+
+        <footer className="mt-8 text-center text-slate-400 text-[10px] font-bold uppercase tracking-[0.3em]">
+          System Secure Layer v2.4
+        </footer>
       </div>
     </div>
   );

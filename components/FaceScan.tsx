@@ -190,110 +190,92 @@ const FaceScan: React.FC<FaceScanProps> = ({ onScanComplete }) => {
     }, [onResults, cleanup]);
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-[#0a0a0a] text-white p-6 font-sans">
-            {/* Header Section */}
-            <div className="text-center mb-8">
-                <h1 className="text-3xl font-black tracking-tighter bg-gradient-to-b from-white to-neutral-500 bg-clip-text text-transparent">
-                    GSYNC <span className="text-blue-500">VISION</span>
-                </h1>
-                <p className="text-[10px] uppercase tracking-[0.2em] text-neutral-500 font-bold mt-1">Liveness Identity Verification</p>
-            </div>
-
-            {/* Camera Container */}
-            <div className="relative w-full max-w-[340px] aspect-[3/4] rounded-[2.5rem] overflow-hidden border border-white/10 shadow-[0_0_50px_-12px_rgba(59,130,246,0.3)] bg-neutral-900">
+        <div className="flex flex-col items-center">
+            {/* Camera Feed Container */}
+            <div className="relative w-full aspect-[3/4] rounded-[2rem] overflow-hidden bg-slate-900 shadow-inner group">
                 <video ref={videoRef} className="hidden" playsInline muted />
-                <canvas ref={canvasRef} className="w-full h-full object-cover transform -scale-x-100" />
+                <canvas ref={canvasRef} className="w-full h-full object-cover transform -scale-x-100 opacity-90" />
                 
-                {/* Face Oval Overlay */}
+                {/* Overlay Glass Effect */}
+                <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/40 pointer-events-none" />
+
+                {/* Face Oval Guide */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div className={`w-[75%] h-[68%] border-2 rounded-[50%] transition-all duration-500 ${
-                        status === 'scanning' ? 'border-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.5)] scale-105' : 'border-white/20'
+                    <div className={`w-[70%] h-[70%] border-2 rounded-[50%] transition-all duration-700 ${
+                        status === 'scanning' 
+                        ? 'border-indigo-400 shadow-[0_0_30px_rgba(129,140,248,0.6)] scale-105' 
+                        : 'border-white/30'
                     }`}>
-                        {/* Corner Brackets */}
-                        <div className="absolute -top-2 -left-2 w-6 h-6 border-t-2 border-l-2 border-blue-400 rounded-tl-lg" />
-                        <div className="absolute -bottom-2 -right-2 w-6 h-6 border-b-2 border-right-2 border-blue-400 rounded-br-lg" />
+                        {/* Focus Brackets */}
+                        <div className="absolute -top-1 -left-1 w-5 h-5 border-t-4 border-l-4 border-indigo-500 rounded-tl-xl" />
+                        <div className="absolute -bottom-1 -right-1 w-5 h-5 border-b-4 border-r-4 border-indigo-500 rounded-br-xl" />
                     </div>
                 </div>
 
-                {/* Scanning Effect */}
+                {/* Futuristic Scanning Line */}
                 {status === 'scanning' && (
-                    <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                        <div className="w-full h-[20%] bg-gradient-to-b from-blue-500/30 to-transparent absolute top-0 animate-scan-line border-b border-blue-400/50" />
+                    <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                        <div className="w-full h-[15%] bg-gradient-to-b from-indigo-500/40 to-transparent absolute top-0 animate-scan-line border-b-2 border-indigo-400" />
                     </div>
                 )}
 
-                {/* Progress Bar (Bottom) */}
+                {/* Status Label (Top Right) */}
+                <div className="absolute top-4 right-4 flex items-center gap-2 bg-black/40 backdrop-blur-md px-3 py-1 rounded-full border border-white/10">
+                    <div className={`w-2 h-2 rounded-full ${status === 'scanning' ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`} />
+                    <span className="text-[10px] font-bold text-white uppercase tracking-tighter">
+                        {status === 'scanning' ? 'Live' : 'Ready'}
+                    </span>
+                </div>
+
+                {/* Progress Micro-Bar (Bottom) */}
                 {status === 'scanning' && (
-                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[80%] h-1.5 bg-white/10 rounded-full overflow-hidden backdrop-blur-md">
+                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[60%] h-1 bg-white/20 rounded-full overflow-hidden">
                         <div 
-                            className="h-full bg-gradient-to-r from-blue-600 to-cyan-400 transition-all duration-300" 
+                            className="h-full bg-indigo-500 transition-all duration-300 shadow-[0_0_10px_#6366f1]" 
                             style={{ width: `${(frameCount / FRAMES_TO_COLLECT) * 100}%` }} 
                         />
                     </div>
                 )}
             </div>
 
-            {/* Status & Results Section */}
-            <div className="mt-8 w-full max-w-[340px] min-h-[140px]">
-                {result ? (
-                    <div className="bg-neutral-900/50 backdrop-blur-xl p-6 rounded-[2rem] border border-white/10 shadow-xl animate-in fade-in zoom-in duration-300">
-                        <div className="flex items-center justify-between mb-4">
-                            <span className="text-xs font-bold text-neutral-400 uppercase tracking-widest">Verification Result</span>
-                            <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${result.is_real ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                                {result.is_real ? 'Success' : 'Failed'}
-                            </div>
-                        </div>
-                        
-                        <div className={`text-4xl font-black text-center mb-1 ${result.is_real ? 'text-white' : 'text-red-500'}`}>
-                            {((result.score || 0) * 100).toFixed(1)}%
-                        </div>
-                        <p className="text-center text-[10px] text-neutral-500 mb-4 font-medium italic">Confidence Score</p>
-                        
-                        <div className="space-y-2 text-[11px] text-neutral-400 border-t border-white/5 pt-4 font-mono">
-                            <div className="flex justify-between">
-                                <span className="opacity-60 uppercase">Motion Sync</span>
-                                <span className="text-white font-bold">{(result.details?.motion_consistency ?? 0).toFixed(4)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="opacity-60 uppercase">Liveness</span>
-                                <span className="text-white font-bold">{(result.details?.visual_liveness ?? 0).toFixed(4)}</span>
-                            </div>
-                        </div>
-                    </div>
-                ) : (
-                    <div className="text-center py-4">
-                        <p className="text-sm text-neutral-400 font-medium animate-pulse">{debugMsg}</p>
-                    </div>
-                )}
+            {/* Messaging Area */}
+            <div className="mt-6 w-full text-center min-h-[40px]">
+                <p className="text-sm font-bold text-slate-600 uppercase tracking-wide">
+                    {status === 'scanning' ? (
+                        <span className="flex items-center justify-center gap-2">
+                            Hold Still <span className="inline-block w-1 h-1 bg-slate-400 rounded-full animate-bounce" />
+                        </span>
+                    ) : debugMsg}
+                </p>
             </div>
 
-            {/* Action Button */}
-            <div className="mt-auto mb-8 w-full max-w-[340px]">
+            {/* Trigger Button */}
+            <div className="w-full mt-2">
                 {status === 'ready' || status === 'done' ? (
                     <button 
                         onClick={startScan} 
-                        className="group relative w-full overflow-hidden bg-white text-black font-black py-5 rounded-[1.5rem] shadow-[0_20px_40px_-15px_rgba(255,255,255,0.2)] active:scale-95 transition-all"
+                        className="w-full py-5 bg-indigo-600 text-white font-black rounded-2xl shadow-[0_10px_25px_-5px_rgba(79,70,229,0.4)] hover:bg-indigo-700 active:scale-95 transition-all uppercase tracking-widest text-sm"
                     >
-                        <span className="relative z-10">{status === 'done' ? 'RE-VERIFY IDENTITY' : 'START AUTHENTICATION'}</span>
-                        <div className="absolute inset-0 bg-gradient-to-r from-neutral-200 to-white group-hover:from-white group-hover:to-white transition-all" />
+                        {status === 'done' ? 'Start Over' : 'Verify Now'}
                     </button>
                 ) : (
-                    <div className="flex flex-col items-center gap-3">
-                        <div className="w-12 h-12 border-3 border-blue-500/20 border-t-blue-500 rounded-full animate-spin" />
-                        <span className="text-[10px] font-bold text-blue-500 tracking-[0.2em]">PROCESSING...</span>
+                    <div className="py-4 flex justify-center">
+                        <div className="px-6 py-2 bg-slate-100 rounded-full text-slate-400 text-[10px] font-black tracking-[0.2em] uppercase">
+                            Capturing Frames...
+                        </div>
                     </div>
                 )}
             </div>
 
-            {/* CSS Animation (Add this to your globals.css or styled-component) */}
             <style jsx>{`
                 @keyframes scan-line {
-                    0% { top: 0%; opacity: 0; }
-                    50% { opacity: 1; }
-                    100% { top: 80%; opacity: 0; }
+                    0% { transform: translateY(-100%); opacity: 0; }
+                    20% { opacity: 1; }
+                    80% { opacity: 1; }
+                    100% { transform: translateY(600%); opacity: 0; }
                 }
                 .animate-scan-line {
-                    animation: scan-line 2s linear infinite;
+                    animation: scan-line 2.5s ease-in-out infinite;
                 }
             `}</style>
         </div>
