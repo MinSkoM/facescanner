@@ -190,7 +190,7 @@ const App = () => {
 
   const NGROK_URL = import.meta.env?.VITE_NGROK_URL;
 
-  const handleSubmit = useCallback(async (scanData) => {
+const handleSubmit = useCallback(async (scanData) => {
     if (!NGROK_URL) {
       setError('Backend URL is not configured. Please contact the site administrator.');
       return;
@@ -200,8 +200,14 @@ const App = () => {
     setError(null);
     setResult(null);
 
-    // scanData ตอนนี้คือ Array ของ Base64 strings จำนวน 85 items แล้ว
-    const blob = new Blob([JSON.stringify(scanData)], { type: 'application/json' });
+    // --- แก้ไขจุดนี้ (สำคัญ) ---
+    // ห่อ scanData (ที่เป็น Array) เข้าไปใน Object ที่มี key ชื่อ "data"
+    // เพื่อให้ตรงกับ backend ที่ใช้ json_data.get('data')
+    const payload = { data: scanData }; 
+    
+    const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+    // -------------------------
+
     const formData = new FormData();
     formData.append('file', blob, 'liveness.json');
     
