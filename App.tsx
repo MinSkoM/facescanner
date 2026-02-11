@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import ResultDisplay from './components/ResultDisplay';
 import FaceScan from './components/FaceScan';
 
-// Type definition เพื่อความชัดเจน
+// Type definition
 interface PredictionResult {
   score: number;
   is_real: boolean;
@@ -23,6 +23,7 @@ const App: React.FC = () => {
   // ดึง URL จาก .env
   const NGROK_URL = (import.meta as any).env?.VITE_NGROK_URL;
 
+  // ปรับ handleSubmit ให้รับ imageBlob ด้วย
   const handleSubmit = useCallback(async (scanData: any, imageBlob: Blob | null) => {
     if (!NGROK_URL) {
       setError('Backend URL is not configured.');
@@ -33,19 +34,21 @@ const App: React.FC = () => {
     setError(null);
     setResult(null);
 
-    // 1. เตรียม JSON Data (ห่อด้วย key 'data' ตามที่ Python backend ต้องการ)
+    // --- จุดแก้ไขสำคัญ 1: ห่อ scanData ด้วย key "data" ---
+    // เพื่อแก้ Error: 'list' object has no attribute 'get'
     const payload = { data: scanData };
     const jsonBlob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
     
-    // 2. เตรียม FormData
+    // เตรียม FormData
     const formData = new FormData();
-    formData.append('file', jsonBlob, 'liveness.json'); // Key 'file' สำหรับ JSON
+    formData.append('file', jsonBlob, 'liveness.json');
     
+    // --- จุดแก้ไขสำคัญ 2: แนบรูปภาพไปด้วย ---
+    // เพื่อให้ Backend นำไปคำนวณ Visual Score ได้
     if (imageBlob) {
-      formData.append('image', imageBlob, 'capture.jpg'); // Key 'image' สำหรับรูปภาพ
+      formData.append('image', imageBlob, 'capture.jpg');
     }
 
-    // จัดการ URL (ตัด Slash ท้ายออกถ้ามี)
     let formattedUrl = NGROK_URL.trim();
     if (formattedUrl.endsWith('/')) {
         formattedUrl = formattedUrl.slice(0, -1);
@@ -55,14 +58,14 @@ const App: React.FC = () => {
       const response = await fetch(`${formattedUrl}/predict`, {
         method: 'POST',
         headers: {
-          'ngrok-skip-browser-warning': '69420', // ทะลุหน้า Warning ของ Ngrok
+          'ngrok-skip-browser-warning': '69420',
         },
         body: formData,
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Server Error: ${response.status}`);
+        throw new Error(errorData.detail || errorData.message || `Server Error: ${response.status}`);
       }
 
       const data: PredictionResult = await response.json();
@@ -79,7 +82,7 @@ const App: React.FC = () => {
     setResult(null);
     setError(null);
     setIsLoading(false);
-    setScanKey(prev => prev + 1); // Reset FaceScan Component
+    setScanKey(prev => prev + 1);
   };
 
   return (

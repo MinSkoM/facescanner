@@ -144,5 +144,6 @@ async def predict(file: UploadFile = File(...), image: Optional[UploadFile] = Fi
         }
 
     except Exception as e:
-        print(f"Inference Error: {e}")
-        return {"status": "error", "message": str(e)}
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e), "is_real": False, "score": 0.0}
