@@ -2,7 +2,6 @@ import React, { useState, useCallback } from 'react';
 import ResultDisplay from './components/ResultDisplay';
 import FaceScan from './components/FaceScan';
 
-// Type definition
 interface PredictionResult {
   score: number;
   is_real: boolean;
@@ -23,7 +22,6 @@ const App: React.FC = () => {
   // ดึง URL จาก .env
   const NGROK_URL = (import.meta as any).env?.VITE_NGROK_URL;
 
-  // ปรับ handleSubmit ให้รับ imageBlob ด้วย
   const handleSubmit = useCallback(async (scanData: any, imageBlob: Blob | null) => {
     if (!NGROK_URL) {
       setError('Backend URL is not configured.');
@@ -34,17 +32,17 @@ const App: React.FC = () => {
     setError(null);
     setResult(null);
 
-    // --- จุดแก้ไขสำคัญ 1: ห่อ scanData ด้วย key "data" ---
-    // เพื่อแก้ Error: 'list' object has no attribute 'get'
-    const payload = { data: scanData };
+    // =========================================================
+    // FIX ERROR: 'list' object has no attribute 'get'
+    // ต้องห่อ Array ด้วย Object { data: ... } เสมอ!
+    // =========================================================
+    const payload = { data: scanData }; 
     const jsonBlob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
     
-    // เตรียม FormData
     const formData = new FormData();
     formData.append('file', jsonBlob, 'liveness.json');
     
-    // --- จุดแก้ไขสำคัญ 2: แนบรูปภาพไปด้วย ---
-    // เพื่อให้ Backend นำไปคำนวณ Visual Score ได้
+    // ส่งรูปภาพไปด้วย (Visual Liveness)
     if (imageBlob) {
       formData.append('image', imageBlob, 'capture.jpg');
     }
@@ -65,11 +63,18 @@ const App: React.FC = () => {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || errorData.message || `Server Error: ${response.status}`);
+        throw new Error(errorData.message || errorData.detail || `Server Error: ${response.status}`);
       }
 
       const data: PredictionResult = await response.json();
+      
+      // เช็คว่า Backend ตอบกลับมาเป็น Error หรือไม่
+      if (data.status === 'error') {
+         throw new Error((data as any).message || "Unknown Backend Error");
+      }
+      
       setResult(data);
+
     } catch (err: any) {
       console.error('API Error:', err);
       setError(err.message || 'Connection failed.');
@@ -88,13 +93,11 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-[#05050a] text-slate-200 font-sans selection:bg-indigo-500/30 overflow-hidden relative">
       
-      {/* Background Ambience */}
       <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-indigo-600/20 rounded-full blur-[128px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-purple-600/10 rounded-full blur-[128px] pointer-events-none" />
 
       <div className="w-full max-w-md z-10 px-6 py-8">
         
-        {/* Header */}
         <header className="text-center mb-8 animate-in fade-in slide-in-from-top-4 duration-700">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-white/5 rounded-2xl shadow-[0_0_40px_-10px_rgba(79,70,229,0.3)] mb-6 border border-white/10 backdrop-blur-md">
             <svg className="w-8 h-8 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -109,16 +112,13 @@ const App: React.FC = () => {
           </p>
         </header>
 
-        {/* Main Card */}
         <main className="relative bg-black/40 backdrop-blur-xl rounded-[2.5rem] shadow-2xl border border-white/10 overflow-hidden ring-1 ring-white/5">
           <div className="p-1">
             
-            {/* 1. State: Scanning */}
             {!result && !isLoading && !error && (
                <FaceScan key={scanKey} onScanComplete={handleSubmit} />
             )}
 
-            {/* 2. State: Loading */}
             {isLoading && (
               <div className="flex flex-col items-center justify-center py-24 space-y-8 min-h-[400px]">
                 <div className="relative">
@@ -134,15 +134,14 @@ const App: React.FC = () => {
               </div>
             )}
             
-            {/* 3. State: Error */}
             {(!NGROK_URL || error) && !isLoading && (
               <div className="p-10 flex flex-col items-center text-center min-h-[400px] justify-center">
                 <div className="w-20 h-20 rounded-full bg-red-500/10 flex items-center justify-center mb-6 text-red-500 border border-red-500/20">
                    <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
                 </div>
                 <h3 className="text-xl font-bold text-white mb-2">System Error</h3>
-                <p className="text-slate-400 mb-8 text-sm leading-relaxed">
-                  {error || "API Endpoint is missing. Please check your environment variables."}
+                <p className="text-slate-400 mb-8 text-sm leading-relaxed text-red-300">
+                  {error || "API Endpoint is missing."}
                 </p>
                 <button onClick={handleScanAgain} className="w-full py-4 px-6 bg-white text-black font-bold rounded-2xl hover:bg-slate-200 transition-all shadow-lg active:scale-95 uppercase tracking-wider text-xs">
                   Retry Connection
@@ -150,7 +149,6 @@ const App: React.FC = () => {
               </div>
             )}
 
-            {/* 4. State: Result */}
             {result && (
               <div className="p-6 flex flex-col justify-between min-h-[450px]">
                 <ResultDisplay result={result} />
