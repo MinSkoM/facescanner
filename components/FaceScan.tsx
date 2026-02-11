@@ -111,16 +111,28 @@ const FaceScan: React.FC<FaceScanProps> = ({ onScanComplete }) => {
 
             const response = await fetch(API_URL, {
                 method: 'POST',
-                body: formData
+                body: formData,
+                // --- เพิ่มส่วนนี้เข้าไป ---
+                headers: {
+                    "ngrok-skip-browser-warning": "69420", // เลขอะไรก็ได้ครับ เป็นการ bypass หน้าเตือน
+                },
+                // -----------------------
             });
+
+            // ตรวจสอบว่า Response เป็น OK ไหม
+            if (!response.ok) {
+                throw new Error(`Server error: ${response.status}`);
+            }
+
             const data = await response.json();
             
             setResult(data);
             setStatus('done');
             setDebugMsg(data.is_real ? "✅ ยืนยันตัวตนสำเร็จ" : "⚠️ ตรวจพบความผิดปกติ");
-            if (onScanComplete) onScanComplete(data);
-        } catch (e) {
-            setDebugMsg("❌ เชื่อมต่อ Server ล้มเหลว");
+
+        } catch (e: any) {
+            console.error("Fetch Error:", e); // ดู error จริงใน Console (F12)
+            setDebugMsg(`❌ เชื่อมต่อล้มเหลว: ${e.message}`);
             setStatus('ready');
         }
     };
