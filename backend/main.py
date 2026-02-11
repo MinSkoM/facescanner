@@ -133,16 +133,16 @@ async def predict(file: UploadFile = File(...), image: Optional[UploadFile] = Fi
         is_real = final_score > 0.7 
         
         return {
-            "score": float(final_score),
+            "score": round(final_score, 4),
             "is_real": bool(is_real),
             "status": "success",
             "details": {
-                "motion_consistency": float(res_motion),
-                "visual_liveness": float(res_visual)
+                "motion_consistency": round(float(res_0), 4),
+                "visual_liveness": round(float(res_1), 4),
+                "frames_processed": 80
             }
         }
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return {"status": "error", "message": str(e), "is_real": False, "score": 0.0}
+        print(f"Inference Error: {e}")
+        return {"status": "error", "message": str(e)}
