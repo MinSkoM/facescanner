@@ -24,7 +24,7 @@ The backend is a FastAPI server that handles the machine learning inference.
 
 3.  **Install dependencies:**
     ```bash
-    pip install "fastapi[all]" "numpy" "pandas" "scipy" "tensorflow"
+    pip3 install "fastapi[all]" "numpy" "pandas" "scipy" "tensorflow"
     ```
 
 4.  **Add the TFLite Model:**

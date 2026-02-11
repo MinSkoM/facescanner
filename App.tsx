@@ -33,6 +33,10 @@ const App: React.FC = () => {
     try {
       const response = await fetch(`${formattedUrl}/predict`, {
         method: 'POST',
+        headers: {
+          // เพิ่มบรรทัดนี้สำคัญมาก! เพื่อทะลุหน้า Warning ของ Ngrok
+          'ngrok-skip-browser-warning': '69420', 
+        },
         body: formData,
       });
 
