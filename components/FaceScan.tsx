@@ -147,60 +147,90 @@ const FaceScan: React.FC<FaceScanProps> = ({ onScanComplete }) => {
     };
 
     return (
-        <div className="flex flex-col items-center w-full max-w-md mx-auto p-4">
-            {/* Container นี้กำหนด aspect-ratio เป็น 4/3 เพื่อให้ตรงกับกล้อง 
-                และใช้ max-width เพื่อไม่ให้ใหญ่เกินไป
-            */}
-            <div className="relative w-full max-w-[400px] aspect-[4/3] bg-black rounded-lg overflow-hidden shadow-2xl border-4 border-gray-800">
-                
-                {/* Video ซ่อนไว้ (opacity-0) แต่ต้องมีขนาดเต็มพื้นที่ */}
-                <video 
-                    ref={videoRef} 
-                    className="absolute inset-0 w-full h-full object-cover opacity-0" 
-                    playsInline 
-                    muted 
-                />
-                
-                {/* Canvas โชว์ภาพจริง กลับด้านแนวนอนเพื่อให้เหมือนกระจก */}
-                <canvas 
-                    ref={canvasRef} 
-                    className="absolute inset-0 w-full h-full object-cover transform -scale-x-100" 
-                />
+        <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            minHeight: '100vh',
+            backgroundColor: '#1a1a1a',
+            color: 'white',
+            fontFamily: 'sans-serif',
+            padding: '20px'
+        }}>
+            <h1 style={{ fontSize: '1.5rem', marginBottom: '20px' }}>Face Liveness Scan</h1>
 
-                {/* UI Overlay */}
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    {status === 'ready' && (
-                        <button 
-                            onClick={startScan} 
-                            className="pointer-events-auto bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-8 rounded-full shadow-lg transition transform hover:scale-105"
-                        >
-                            START SCAN
-                        </button>
-                    )}
-                    
-                    {status === 'scanning' && (
-                        <div className="absolute top-4 right-4 bg-red-600/90 backdrop-blur text-white px-4 py-1 rounded-full text-sm font-bold shadow animate-pulse">
-                            REC {frameCount}/{FRAMES_TO_COLLECT}
-                        </div>
-                    )}
+            {/* Video Container - ปรับเป็นแนวตั้ง (Portrait) */}
+            <div style={{ 
+            position: 'relative', 
+            width: '100%', 
+            maxWidth: '350px', 
+            aspectRatio: '3/4', 
+            borderRadius: '20px', 
+            overflow: 'hidden',
+            border: `4px solid ${isScanning ? '#00ff00' : '#333'}`,
+            boxShadow: '0 10px 30px rgba(0,0,0,0.5)'
+            }}>
+            <video ref={videoRef} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            <canvas ref={canvasRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} />
+            
+            {/* Overlay วงกลมให้เอาหน้าไปวาง */}
+            <div style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: '250px',
+                height: '250px',
+                border: '2px dashed rgba(255,255,255,0.5)',
+                borderRadius: '50%',
+                pointerEvents: 'none'
+            }}></div>
+            </div>
 
-                    {status === 'processing' && (
-                         <div className="bg-black/60 backdrop-blur absolute inset-0 flex flex-col items-center justify-center text-white">
-                             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-white mb-2"></div>
-                             Processing...
-                         </div>
-                    )}
+            {/* ส่วนแสดงผลคะแนน - ใหญ่และชัดเจน */}
+            {result && (
+            <div style={{ 
+                marginTop: '20px', 
+                padding: '15px', 
+                borderRadius: '15px', 
+                backgroundColor: '#333',
+                width: '100%',
+                maxWidth: '350px',
+                textAlign: 'center'
+            }}>
+                <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: result.is_real ? '#4caf50' : '#f44336' }}>
+                RESULT: {result.is_real ? '✅ REAL' : '❌ SPOOF'}
+                </div>
+                <div style={{ fontSize: '2rem', margin: '10px 0' }}>{(result.score * 100).toFixed(2)}%</div>
+                
+                <div style={{ fontSize: '0.8rem', color: '#aaa', textAlign: 'left', marginTop: '10px' }}>
+                • Motion Head: {result.details.motion_consistency}<br />
+                • Visual Head: {result.details.visual_liveness}
                 </div>
             </div>
-            
-            <div className="mt-4 text-center">
-                <p className={`text-sm font-semibold ${status === 'error' ? 'text-red-500' : 'text-gray-600'}`}>
-                    {debugMsg}
-                </p>
-                {status === 'error' && (
-                     <p className="text-xs text-red-400 mt-1">Please check backend logs.</p>
-                )}
-            </div>
+            )}
+
+            {/* ปุ่มกด - ใหญ่พิเศษสำหรับนิ้วโป้งคนสแกน */}
+            <button 
+            onClick={isScanning ? stopScan : startScan}
+            style={{
+                marginTop: '30px',
+                width: '100%',
+                maxWidth: '350px',
+                padding: '20px',
+                fontSize: '1.2rem',
+                fontWeight: 'bold',
+                borderRadius: '50px',
+                border: 'none',
+                backgroundColor: isScanning ? '#f44336' : '#007bff',
+                color: 'white',
+                boxShadow: '0 5px 15px rgba(0,0,0,0.3)',
+                cursor: 'pointer'
+            }}
+            >
+            {isScanning ? 'CANCEL' : 'START SCAN'}
+            </button>
         </div>
     );
 };

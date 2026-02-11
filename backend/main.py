@@ -100,25 +100,30 @@ async def predict(file: UploadFile = File(...)):
         # ใช้ข้อมูล X_bg (Motion Features) จาก preprocess
         interpreter.set_tensor(input_details[3]['index'], X_bg.astype(np.float32))
 
+        # --- ในไฟล์ main.py ส่วนของเมธอด predict ---
+
         # 3. Run Inference
         interpreter.invoke()
 
-        # 4. Get Outputs (Index 325 และ 435)
-        # โดยทั่วไปเอาค่าจากหัวแรกมาตัดสิน
-        res_0 = interpreter.get_tensor(output_details[0]['index'])
-        res_1 = interpreter.get_tensor(output_details[1]['index'])
+        # 4. ดึงค่าจาก Output ทั้ง 2 หัว
+        res_0 = interpreter.get_tensor(output_details[0]['index'])[0][0]
+        res_1 = interpreter.get_tensor(output_details[1]['index'])[0][0]
         
-        # เฉลี่ยค่า หรือเลือกค่าที่ใช้บอกความเป็นมนุษย์ (ขึ้นอยู่กับตอน Train)
-        score = float((res_0[0][0] + res_1[0][0]) / 2)
+        # คำนวณ Score (สามารถปรับเปลี่ยน Logic ได้ตามต้องการ)
+        final_score = float((res_0 + res_1) / 2)
+        
+        # ตัดสินผล (แนะนำให้ใช้ค่าที่เข้มงวดขึ้นถ้าต้องการกัน Spoof)
+        is_real = final_score > 0.7  # ปรับจาก 0.5 เป็น 0.7 เพื่อความชัวร์
         
         return {
-            "score": round(score, 4),
-            "is_real": score > 0.5,
+            "score": round(final_score, 4),
+            "is_real": is_real,
+            "status": "success",
             "details": {
-                "head_1": float(res_0[0][0]),
-                "head_2": float(res_1[0][0])
-            },
-            "status": "success"
+                "motion_consistency": round(float(res_0), 4),
+                "visual_liveness": round(float(res_1), 4),
+                "frames_processed": 80
+            }
         }
 
     except Exception as e:
