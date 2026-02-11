@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 
 const FRAMES_TO_COLLECT = 80;
-const API_URL = "https://malika-shedable-recollectively.ngrok-free.dev/predict"; // เปลี่ยนตาม IP เครื่องถ้าทดสอบผ่านมือถือ
+const API_URL = "https://malika-shedable-recollectively.ngrok-free.dev/predict"; 
 
 declare const FaceMesh: any;
 
@@ -16,20 +16,17 @@ const FaceScan: React.FC<FaceScanProps> = ({ onScanComplete }) => {
     const recordedDataRef = useRef<any[]>([]);
     const animationFrameId = useRef<number>();
     
-    // Refs สำหรับข้อมูลเบื้องหลัง
     const isScanningRef = useRef(false);
     const sensorsRef = useRef({ 
         accel: { x: 0, y: 0, z: 0 }, 
         gyro: { x: 0, y: 0, z: 0 } 
     });
 
-    // States
     const [status, setStatus] = useState<string>('initializing');
     const [frameCount, setFrameCount] = useState(0);
     const [debugMsg, setDebugMsg] = useState<string>("กำลังโหลด AI...");
     const [result, setResult] = useState<any>(null);
 
-    // 1. ดึงข้อมูล Sensor จากเครื่อง
     useEffect(() => {
         const handleMotion = (e: DeviceMotionEvent) => {
             sensorsRef.current.accel = {
@@ -77,8 +74,6 @@ const FaceScan: React.FC<FaceScanProps> = ({ onScanComplete }) => {
         if (isScanningRef.current) {
             if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
                 const landmarks = results.multiFaceLandmarks[0];
-                
-                // เก็บข้อมูลครบถ้วน: Face + Sensors
                 recordedDataRef.current.push({
                     faceMesh: landmarks.map((lm: any) => [lm.x, lm.y, lm.z]).flat(),
                     sensors: { ...sensorsRef.current },
@@ -92,8 +87,6 @@ const FaceScan: React.FC<FaceScanProps> = ({ onScanComplete }) => {
                     isScanningRef.current = false;
                     setStatus('processing');
                     setDebugMsg("กำลังประมวลผลคะแนน...");
-                    
-                    // ส่งข้อมูลไป API ทันที
                     await sendDataToAPI();
                 }
             } else {
@@ -112,26 +105,17 @@ const FaceScan: React.FC<FaceScanProps> = ({ onScanComplete }) => {
             const response = await fetch(API_URL, {
                 method: 'POST',
                 body: formData,
-                // --- เพิ่มส่วนนี้เข้าไป ---
-                headers: {
-                    "ngrok-skip-browser-warning": "69420", // เลขอะไรก็ได้ครับ เป็นการ bypass หน้าเตือน
-                },
-                // -----------------------
+                headers: { "ngrok-skip-browser-warning": "69420" }
             });
 
-            // ตรวจสอบว่า Response เป็น OK ไหม
-            if (!response.ok) {
-                throw new Error(`Server error: ${response.status}`);
-            }
+            if (!response.ok) throw new Error(`Server error: ${response.status}`);
 
             const data = await response.json();
-            
             setResult(data);
             setStatus('done');
             setDebugMsg(data.is_real ? "✅ ยืนยันตัวตนสำเร็จ" : "⚠️ ตรวจพบความผิดปกติ");
 
         } catch (e: any) {
-            console.error("Fetch Error:", e); // ดู error จริงใน Console (F12)
             setDebugMsg(`❌ เชื่อมต่อล้มเหลว: ${e.message}`);
             setStatus('ready');
         }
@@ -153,7 +137,6 @@ const FaceScan: React.FC<FaceScanProps> = ({ onScanComplete }) => {
                         canvasRef.current.height = videoRef.current!.videoHeight;
                     }
                     setStatus('scanning');
-                    setDebugMsg("อยู่นิ่งๆ กำลังสแกน...");
                     recordedDataRef.current = [];
                     setFrameCount(0);
                     isScanningRef.current = true;
@@ -201,72 +184,52 @@ const FaceScan: React.FC<FaceScanProps> = ({ onScanComplete }) => {
         <div className="flex flex-col items-center justify-center min-h-screen bg-neutral-950 text-white p-6">
             <h1 className="text-2xl font-bold mb-6 tracking-tight">Gsync Liveness</h1>
 
-            {/* Camera Container: ทรงตั้ง 3:4 */}
             <div className="relative w-full max-w-[340px] aspect-[3/4] rounded-[2rem] overflow-hidden border-4 border-neutral-800 shadow-2xl bg-black">
                 <video ref={videoRef} className="hidden" playsInline muted />
-                <canvas 
-                    ref={canvasRef} 
-                    className="w-full h-full object-cover transform -scale-x-100" 
-                />
-
-                {/* Face Oval Guide */}
+                <canvas ref={canvasRef} className="w-full h-full object-cover transform -scale-x-100" />
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <div className="w-[70%] h-[65%] border-2 border-dashed border-white/30 rounded-[50%]" />
                 </div>
-
-                {/* Progress Bar */}
                 {status === 'scanning' && (
                     <div className="absolute bottom-0 left-0 w-full h-2 bg-neutral-800">
-                        <div 
-                            className="h-full bg-green-500 transition-all duration-100" 
-                            style={{ width: `${(frameCount / FRAMES_TO_COLLECT) * 100}%` }}
-                        />
+                        <div className="h-full bg-green-500 transition-all duration-100" style={{ width: `${(frameCount / FRAMES_TO_COLLECT) * 100}%` }} />
                     </div>
                 )}
             </div>
 
-            {/* Status & Results Section */}
             <div className="mt-8 w-full max-w-[340px]">
                 {result ? (
-                    <div className="bg-neutral-900 p-5 rounded-2xl border border-neutral-800 animate-in fade-in slide-in-from-bottom-4">
+                    <div className="bg-neutral-900 p-5 rounded-2xl border border-neutral-800">
                         <div className={`text-xl font-bold text-center ${result.is_real ? 'text-green-400' : 'text-red-400'}`}>
                             {result.is_real ? '✅ ตัวตนจริง' : '❌ ตรวจพบการปลอมแปลง'}
                         </div>
                         <div className="text-4xl font-black text-center my-3">
-                            {(result.score * 100).toFixed(1)}%
+                            {((result.score || 0) * 100).toFixed(1)}%
                         </div>
                         <div className="space-y-1 text-xs text-neutral-400 border-t border-neutral-800 pt-3">
                             <div className="flex justify-between">
                                 <span>Motion Consistency:</span>
-                                <span className="text-neutral-200">{result.details.head_1.toFixed(4)}</span>
+                                <span className="text-neutral-200">{(result.details?.motion_consistency ?? result.details?.head_1 ?? 0).toFixed(4)}</span>
                             </div>
                             <div className="flex justify-between">
                                 <span>Visual Liveness:</span>
-                                <span className="text-neutral-200">{result.details.head_2.toFixed(4)}</span>
+                                <span className="text-neutral-200">{(result.details?.visual_liveness ?? result.details?.head_2 ?? 0).toFixed(4)}</span>
                             </div>
                         </div>
                     </div>
                 ) : (
-                    <p className="text-center text-neutral-400 font-medium">
-                        {debugMsg}
-                    </p>
+                    <p className="text-center text-neutral-400 font-medium">{debugMsg}</p>
                 )}
             </div>
 
-            {/* Action Button */}
             <div className="mt-auto mb-10 w-full max-w-[340px]">
                 {status === 'ready' || status === 'done' ? (
-                    <button 
-                        onClick={startScan} 
-                        className="w-full bg-white text-black font-bold py-5 rounded-2xl shadow-xl active:scale-95 transition-transform"
-                    >
+                    <button onClick={startScan} className="w-full bg-white text-black font-bold py-5 rounded-2xl shadow-xl active:scale-95 transition-transform">
                         {status === 'done' ? 'สแกนอีกครั้ง' : 'เริ่มสแกน'}
                     </button>
                 ) : (
                     <div className="flex justify-center">
-                        <div className="animate-bounce p-4 bg-neutral-800 rounded-full">
-                            <div className="w-6 h-6 border-4 border-white border-t-transparent rounded-full animate-spin" />
-                        </div>
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
                     </div>
                 )}
             </div>
