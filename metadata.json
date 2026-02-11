@@ -1,0 +1,7 @@
+{
+  "name": "Face Liveness Detection",
+  "description": "A web application for face liveness detection using a TFLite model. It features a FastAPI backend for model inference and a React frontend for user interaction.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
