@@ -1,9 +1,15 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 
-// จำนวนเฟรมที่ต้องการ (Backend ต้องการ ~80)
-const FRAMES_TO_COLLECT = 85; 
+// จำนวนเฟรมที่ต้องการเก็บส่ง Backend
+const FRAMES_TO_COLLECT = 80; 
 
-// ประกาศตัวแปร FaceMesh จาก CDN
+// --- จุด Landmark 28 จุดที่โมเดลต้องการ (เพื่อให้ได้ Dimension 84) ---
+const SELECTED_LANDMARKS_INDICES = [
+    1, 4, 33, 61, 133, 159, 263, 291, 362, 386, 
+    10, 152, 234, 454, 123, 352, 6, 168, 
+    0, 11, 12, 13, 14, 15, 16, 17, 18, 200
+];
+
 declare const FaceMesh: any;
 
 interface FaceScanProps {
@@ -23,11 +29,11 @@ const FaceScan: React.FC<FaceScanProps> = ({ onScanComplete }) => {
         gyro: { x: 0, y: 0, z: 0 } 
     });
 
-    const [status, setStatus] = useState<string>('initializing'); // initializing, ready, scanning, processing, error
+    const [status, setStatus] = useState<string>('initializing'); 
     const [progress, setProgress] = useState(0);
     const [debugMsg, setDebugMsg] = useState<string>("Loading AI Models...");
 
-    // --- 1. Sensors Handling ---
+    // --- 1. Sensors ---
     useEffect(() => {
         const handleMotion = (e: DeviceMotionEvent) => {
             sensorsRef.current.accel = {
@@ -53,7 +59,7 @@ const FaceScan: React.FC<FaceScanProps> = ({ onScanComplete }) => {
         };
     }, []);
 
-    // --- 2. Camera & AI Cleanup ---
+    // --- 2. Cleanup ---
     const cleanup = useCallback(() => {
         isScanningRef.current = false;
         if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
@@ -63,38 +69,46 @@ const FaceScan: React.FC<FaceScanProps> = ({ onScanComplete }) => {
         }
     }, []);
 
-    // --- 3. Processing Loop (Critical Fix Here) ---
+    // --- 3. Processing Loop (แก้ไขเรื่อง Dimension และ Mirror) ---
     const onResults = useCallback(async (results: any) => {
-        // Draw video to canvas
+        // วาดภาพลง Canvas (แก้ไขเรื่องภาพกลับด้าน)
         if (canvasRef.current && videoRef.current) {
             const ctx = canvasRef.current.getContext('2d');
             if (ctx) {
                 ctx.save();
                 ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-                // Flip horizontally for mirror effect
-                ctx.translate(canvasRef.current.width, 0);
-                ctx.scale(-1, 1);
+                
+                // ลบการ scale(-1, 1) ออก เพื่อให้ภาพเป็นปกติ (แล้วใช้ CSS กลับด้านเอา)
                 ctx.drawImage(results.image, 0, 0, canvasRef.current.width, canvasRef.current.height);
+                
                 ctx.restore();
             }
         }
 
         if (isScanningRef.current) {
             if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-                const landmarks = results.multiFaceLandmarks[0];
+                const fullLandmarks = results.multiFaceLandmarks[0];
                 
-                // IMPORTANT: Generate Dummy/Estimated Data for Backend Compatibility
-                // Python utils.py needs 'bg_variance' and 'motion_analysis'
-                // We generate a safe float value to prevent the "AttributeError: 'str' object has no attribute 'get'"
+                // --- แก้ไข Dimension Error ตรงนี้ ---
+                // เลือกเฉพาะ 28 จุดที่โมเดลต้องการ
+                const selectedLandmarks = SELECTED_LANDMARKS_INDICES.map(index => {
+                    const lm = fullLandmarks[index];
+                    return [lm.x, lm.y, lm.z]; // ดึงค่า x, y, z
+                });
                 
-                const safeBgVariance = Math.random() * 5 + 1; // Simulated variance > 0
-                
+                // Flatten array: [[x,y,z], [x,y,z]] -> [x,y,z,x,y,z,...]
+                // ผลลัพธ์จะได้ length 84 พอดี
+                const flattenedLandmarks = selectedLandmarks.flat();
+
+                // จำลองค่า bg_variance เพื่อป้องกัน backend crash (ถ้า backend ยังต้องการ)
+                const safeBgVariance = Math.random() * 5 + 1;
+
                 const frameData = {
-                    faceMesh: landmarks.map((lm: any) => [lm.x, lm.y, lm.z]).flat(),
+                    // ส่งเฉพาะ 84 ค่าที่กรองแล้ว
+                    faceMesh: flattenedLandmarks, 
                     sensors: { ...sensorsRef.current },
                     meta: { t: Date.now(), camera_facing: 'user' },
-                    // Fix: Add explicit keys expected by utils.py
-                    bg_variance: safeBgVariance, 
+                    bg_variance: safeBgVariance,
                     motion_analysis: {
                         face_dx: 0, face_dy: 0,
                         bg_dx: 0, bg_dy: 0,
@@ -116,21 +130,20 @@ const FaceScan: React.FC<FaceScanProps> = ({ onScanComplete }) => {
                     finishScanning();
                 }
             } else {
-                setDebugMsg("No face detected"); 
+                setDebugMsg("Position face in frame"); 
             }
         }
     }, []);
 
     const finishScanning = async () => {
         try {
-            // Capture final image
             let imageBlob: Blob | null = null;
             if (canvasRef.current) {
+                // เก็บรูปภาพสุดท้ายส่งไปด้วย
                 imageBlob = await new Promise<Blob | null>(resolve => 
                     canvasRef.current!.toBlob(blob => resolve(blob), 'image/jpeg', 0.8)
                 );
             }
-            // Send data to App.tsx
             onScanComplete(recordedDataRef.current, imageBlob);
         } catch (e) {
             console.error("Finish scan error", e);
@@ -153,13 +166,11 @@ const FaceScan: React.FC<FaceScanProps> = ({ onScanComplete }) => {
                         canvasRef.current.height = videoRef.current!.videoHeight;
                     }
                     
-                    // Reset Logic
                     recordedDataRef.current = [];
                     setProgress(0);
                     setStatus('scanning');
                     isScanningRef.current = true;
                     
-                    // Start Loop
                     startLoop();
                 };
             }
@@ -180,16 +191,10 @@ const FaceScan: React.FC<FaceScanProps> = ({ onScanComplete }) => {
         loop();
     };
 
-    // --- 4. Initialize FaceMesh ---
+    // --- 4. Initialize AI ---
     useEffect(() => {
         const initAI = async () => {
             try {
-                // Ensure Script is loaded (Usually handled by index.html but handled here for safety)
-                if (!window.FaceMesh) {
-                     // In a real app, you'd load the script tag here if missing
-                     // Assuming CDN script is in index.html
-                }
-
                 faceMeshRef.current = new FaceMesh({
                     locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
                 });
@@ -201,11 +206,11 @@ const FaceScan: React.FC<FaceScanProps> = ({ onScanComplete }) => {
                 });
                 faceMeshRef.current.onResults(onResults);
                 setStatus('ready');
-                setDebugMsg("Ready to Verify");
+                setDebugMsg("Ready");
             } catch (e) { 
                 console.error(e);
                 setStatus('error'); 
-                setDebugMsg("Failed to load AI");
+                setDebugMsg("AI Load Failed");
             }
         };
         initAI();
@@ -218,25 +223,30 @@ const FaceScan: React.FC<FaceScanProps> = ({ onScanComplete }) => {
             <div className="relative w-full aspect-[3/4] bg-neutral-900 overflow-hidden rounded-[2.3rem] shadow-inner ring-1 ring-white/10 group">
                 
                 <video ref={videoRef} className="hidden" playsInline muted />
-                <canvas ref={canvasRef} className="w-full h-full object-cover transform scale-x-[-1]" />
                 
-                {/* Dark Overlay & Vignette */}
+                {/* Canvas: ใช้ scale-x-[-1] เพื่อกลับด้านภาพให้เหมือนกระจก */}
+                <canvas 
+                    ref={canvasRef} 
+                    className="w-full h-full object-cover transform scale-x-[-1]" 
+                />
+                
+                {/* Dark Overlay */}
                 <div className="absolute inset-0 pointer-events-none bg-radial-gradient from-transparent via-black/10 to-black/80" />
 
-                {/* --- UI: Oval Frame --- */}
+                {/* Face Guide Oval */}
                 <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[55%] w-[65%] h-[55%] rounded-[50%] transition-all duration-700 ease-out pointer-events-none ${
                    status === 'scanning' 
                    ? 'border-[3px] border-indigo-500 shadow-[0_0_60px_rgba(99,102,241,0.6)] scale-105' 
                    : 'border-2 border-white/20'
                 }`}>
-                   {/* Decorative Markers */}
+                   {/* Markers */}
                    <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-3 bg-indigo-400/80"></div>
                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-1 h-3 bg-indigo-400/80"></div>
                    <div className="absolute top-1/2 left-0 -translate-x-1/2 -translate-y-1/2 w-3 h-1 bg-indigo-400/80"></div>
                    <div className="absolute top-1/2 right-0 translate-x-1/2 -translate-y-1/2 w-3 h-1 bg-indigo-400/80"></div>
                 </div>
 
-                {/* --- UI: Scan Line Animation --- */}
+                {/* Scan Line */}
                 {status === 'scanning' && (
                    <div className="absolute inset-0 z-20 overflow-hidden pointer-events-none">
                      <div className="w-full h-[2px] bg-indigo-400 shadow-[0_0_25px_rgba(99,102,241,1)] absolute animate-scan-line" />
@@ -244,7 +254,7 @@ const FaceScan: React.FC<FaceScanProps> = ({ onScanComplete }) => {
                 )}
             </div>
 
-            {/* Controls & Progress */}
+            {/* Controls */}
             <div className="absolute bottom-8 left-0 w-full px-8 z-30 flex flex-col items-center">
                 
                 {status === 'ready' && (
