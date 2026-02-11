@@ -1,19 +1,31 @@
 import React, { useState, useCallback } from 'react';
-import { PredictionResult } from './types';
 import ResultDisplay from './components/ResultDisplay';
 import FaceScan from './components/FaceScan';
+
+// Type definition เพื่อความชัดเจน
+interface PredictionResult {
+  score: number;
+  is_real: boolean;
+  status: string;
+  details?: {
+    motion_consistency: number;
+    visual_liveness: number;
+    frames_processed: number;
+  };
+}
 
 const App: React.FC = () => {
   const [result, setResult] = useState<PredictionResult | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [scanKey, setScanKey] = useState<number>(0); // Used to reset the FaceScan component
+  const [scanKey, setScanKey] = useState<number>(0);
 
+  // ดึง URL จาก .env
   const NGROK_URL = (import.meta as any).env?.VITE_NGROK_URL;
 
-  const handleSubmit = useCallback(async (scanData: object) => {
+  const handleSubmit = useCallback(async (scanData: any, imageBlob: Blob | null) => {
     if (!NGROK_URL) {
-      setError('Backend URL is not configured. Please contact the site administrator.');
+      setError('Backend URL is not configured.');
       return;
     }
 
@@ -21,10 +33,19 @@ const App: React.FC = () => {
     setError(null);
     setResult(null);
 
-    const blob = new Blob([JSON.stringify(scanData)], { type: 'application/json' });
-    const formData = new FormData();
-    formData.append('file', blob, 'liveness.json');
+    // 1. เตรียม JSON Data (ห่อด้วย key 'data' ตามที่ Python backend ต้องการ)
+    const payload = { data: scanData };
+    const jsonBlob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
     
+    // 2. เตรียม FormData
+    const formData = new FormData();
+    formData.append('file', jsonBlob, 'liveness.json'); // Key 'file' สำหรับ JSON
+    
+    if (imageBlob) {
+      formData.append('image', imageBlob, 'capture.jpg'); // Key 'image' สำหรับรูปภาพ
+    }
+
+    // จัดการ URL (ตัด Slash ท้ายออกถ้ามี)
     let formattedUrl = NGROK_URL.trim();
     if (formattedUrl.endsWith('/')) {
         formattedUrl = formattedUrl.slice(0, -1);
@@ -34,22 +55,21 @@ const App: React.FC = () => {
       const response = await fetch(`${formattedUrl}/predict`, {
         method: 'POST',
         headers: {
-          // เพิ่มบรรทัดนี้สำคัญมาก! เพื่อทะลุหน้า Warning ของ Ngrok
-          'ngrok-skip-browser-warning': '69420', 
+          'ngrok-skip-browser-warning': '69420', // ทะลุหน้า Warning ของ Ngrok
         },
         body: formData,
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Server Error: ${response.status}`);
       }
 
       const data: PredictionResult = await response.json();
       setResult(data);
     } catch (err: any) {
-      console.error('Prediction API error:', err);
-      setError(err.message || 'An unexpected error occurred.');
+      console.error('API Error:', err);
+      setError(err.message || 'Connection failed.');
     } finally {
       setIsLoading(false);
     }
@@ -59,60 +79,95 @@ const App: React.FC = () => {
     setResult(null);
     setError(null);
     setIsLoading(false);
-    setScanKey(prevKey => prevKey + 1); // Change key to force remount/reset of FaceScan
+    setScanKey(prev => prev + 1); // Reset FaceScan Component
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 font-sans">
-      <div className="w-full max-w-lg mx-auto">
-        <header className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-800">Face Liveness Detection</h1>
-           <p className="text-gray-600 mt-2">
-            {result ? "Prediction Result" : "Perform a quick scan to verify liveness."}
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[#05050a] text-slate-200 font-sans selection:bg-indigo-500/30 overflow-hidden relative">
+      
+      {/* Background Ambience */}
+      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-indigo-600/20 rounded-full blur-[128px] pointer-events-none" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-purple-600/10 rounded-full blur-[128px] pointer-events-none" />
+
+      <div className="w-full max-w-md z-10 px-6 py-8">
+        
+        {/* Header */}
+        <header className="text-center mb-8 animate-in fade-in slide-in-from-top-4 duration-700">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-white/5 rounded-2xl shadow-[0_0_40px_-10px_rgba(79,70,229,0.3)] mb-6 border border-white/10 backdrop-blur-md">
+            <svg className="w-8 h-8 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+          </div>
+          <h1 className="text-3xl font-black tracking-tight text-white mb-2 drop-shadow-lg">
+            GSYNC <span className="text-indigo-500">LIVENESS</span>
+          </h1>
+          <p className="text-slate-500 text-xs font-bold tracking-[0.2em] uppercase">
+            {result ? "Verification Report" : "Biometric Security Check"}
           </p>
         </header>
 
-        <main className="bg-white p-8 rounded-2xl shadow-lg space-y-6">
-          {!result && !isLoading && !error && (
-             <FaceScan key={scanKey} onScanComplete={handleSubmit} />
-          )}
+        {/* Main Card */}
+        <main className="relative bg-black/40 backdrop-blur-xl rounded-[2.5rem] shadow-2xl border border-white/10 overflow-hidden ring-1 ring-white/5">
+          <div className="p-1">
+            
+            {/* 1. State: Scanning */}
+            {!result && !isLoading && !error && (
+               <FaceScan key={scanKey} onScanComplete={handleSubmit} />
+            )}
 
-          {isLoading && (
-             <div className="flex flex-col items-center justify-center p-10 space-y-4">
-               <svg className="animate-spin h-10 w-10 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <p className="text-gray-700 font-semibold">Analyzing liveness...</p>
-             </div>
-          )}
-          
-          {!NGROK_URL && (
-            <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4" role="alert">
-              <p className="font-bold">Configuration Notice</p>
-              <p>The backend API URL is not configured. The application will not function correctly.</p>
-            </div>
-          )}
+            {/* 2. State: Loading */}
+            {isLoading && (
+              <div className="flex flex-col items-center justify-center py-24 space-y-8 min-h-[400px]">
+                <div className="relative">
+                  <div className="w-24 h-24 border-4 border-white/5 border-t-indigo-500 rounded-full animate-spin"></div>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-12 h-12 bg-indigo-500/20 rounded-full animate-pulse blur-md"></div>
+                  </div>
+                </div>
+                <div className="text-center space-y-2">
+                  <p className="text-xl font-bold text-white uppercase tracking-widest animate-pulse">Processing</p>
+                  <p className="text-xs text-indigo-300/70 font-mono">Analyzing vectors & textures...</p>
+                </div>
+              </div>
+            )}
+            
+            {/* 3. State: Error */}
+            {(!NGROK_URL || error) && !isLoading && (
+              <div className="p-10 flex flex-col items-center text-center min-h-[400px] justify-center">
+                <div className="w-20 h-20 rounded-full bg-red-500/10 flex items-center justify-center mb-6 text-red-500 border border-red-500/20">
+                   <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                </div>
+                <h3 className="text-xl font-bold text-white mb-2">System Error</h3>
+                <p className="text-slate-400 mb-8 text-sm leading-relaxed">
+                  {error || "API Endpoint is missing. Please check your environment variables."}
+                </p>
+                <button onClick={handleScanAgain} className="w-full py-4 px-6 bg-white text-black font-bold rounded-2xl hover:bg-slate-200 transition-all shadow-lg active:scale-95 uppercase tracking-wider text-xs">
+                  Retry Connection
+                </button>
+              </div>
+            )}
 
-          {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative text-center" role="alert">
-              <strong className="font-bold">Error: </strong>
-              <span className="block sm:inline">{error}</span>
-               <button onClick={handleScanAgain} className="mt-4 w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">
-                  Try Again
-               </button>
-            </div>
-          )}
+            {/* 4. State: Result */}
+            {result && (
+              <div className="p-6 flex flex-col justify-between min-h-[450px]">
+                <ResultDisplay result={result} />
+                <button 
+                  onClick={handleScanAgain} 
+                  className="w-full mt-6 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 px-6 rounded-2xl transition-all shadow-[0_10px_30px_-10px_rgba(79,70,229,0.5)] active:scale-[0.98] uppercase tracking-wider text-xs"
+                >
+                  New Scan
+                </button>
+              </div>
+            )}
 
-          {result && (
-            <div className="text-center">
-              <ResultDisplay result={result} />
-              <button onClick={handleScanAgain} className="mt-6 w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700">
-                Scan Again
-              </button>
-            </div>
-          )}
+          </div>
         </main>
+
+        <footer className="mt-8 text-center">
+          <p className="text-slate-600 text-[10px] font-bold uppercase tracking-[0.3em]">
+            Secure Identity V2.0
+          </p>
+        </footer>
       </div>
     </div>
   );
